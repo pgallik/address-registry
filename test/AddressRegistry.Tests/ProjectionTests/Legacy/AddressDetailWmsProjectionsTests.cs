@@ -1,13 +1,19 @@
 namespace AddressRegistry.Tests.ProjectionTests.Legacy
 {
+    using System;
+    using System.Collections.Generic;
     using System.Threading.Tasks;
     using Address;
     using Address.Events;
+    using Api.BackOffice.Abstractions;
     using AutoFixture;
     using Be.Vlaanderen.Basisregisters.GrAr.Legacy.Adres;
     using Be.Vlaanderen.Basisregisters.GrAr.Provenance;
     using Be.Vlaanderen.Basisregisters.ProjectionHandling.Connector.Testing;
+    using Be.Vlaanderen.Basisregisters.Utilities.HexByteConvertor;
+    using global::AutoFixture;
     using Microsoft.EntityFrameworkCore;
+    using NetTopologySuite.Geometries;
     using NetTopologySuite.IO;
     using Projections.Wms;
     using Projections.Wms.AddressDetail;
@@ -691,8 +697,140 @@ namespace AddressRegistry.Tests.ProjectionTests.Legacy
                     }));
         }
 
+        [Fact]
+        public async Task AddressWasPositioned()
+        {
+            var fixture = new Fixture();
+            fixture.Customize(new NodaTimeCustomization());
+            fixture.Customize(new SetProvenanceImplementationsCallSetProvenance());
+
+            var streetNameId = fixture.Create<StreetNameId>();
+
+            var options = new DbContextOptionsBuilder<WmsContext>()
+                .UseInMemoryDatabase(Guid.NewGuid().ToString())
+                .Options;
+
+            var ctx = CreateContext(options);
+
+            var houseNumber1 = new AddressDetailItem
+            {
+                StreetNameId = streetNameId,
+                AddressId = fixture.Create<AddressId>(),
+                HouseNumber = "1",
+                PositionX = 111,
+                PositionY = 111,
+                Position = new Point(111, 111),
+                HouseNumberLabel = "1-6A",
+                Complete = true
+            };
+            ctx.AddressDetail.Add(houseNumber1);
+
+            var addressId = fixture.Create<AddressId>();
+            var houseNumber6A = new AddressDetailItem
+            {
+                StreetNameId = streetNameId,
+                AddressId = addressId,
+                HouseNumber = "6A",
+                PositionX = 111,
+                PositionY = 111,
+                Position = new Point(111, 111),
+                HouseNumberLabel = "1-6A",
+                Complete = true
+            };
+            ctx.AddressDetail.Add(houseNumber6A);
+
+            var houseNumber6C = new AddressDetailItem
+            {
+                StreetNameId = streetNameId,
+                AddressId = fixture.Create<AddressId>(),
+                HouseNumber = "6C",
+                PositionX = 333,
+                PositionY = 333,
+                Position = new Point(333, 333),
+                HouseNumberLabel = "6C",
+                Complete = true
+            };
+            ctx.AddressDetail.Add(houseNumber6C);
+            ctx.SaveChanges();
+
+            var wkbWriter = new WKBWriter { Strict = false, HandleSRID = true };
+            var point = "POINT (333 333)";
+            var geometry = new WKTReader { DefaultSRID = SpatialReferenceSystemId.Lambert72 }.Read(point);
+            geometry.SRID = SpatialReferenceSystemId.Lambert72;
+            var extendedWkb = wkbWriter.Write(geometry);
+
+            var addressWasPositioned = new AddressWasPositioned(
+                addressId,
+                new AddressGeometry(
+                    GeometryMethod.AppointedByAdministrator,
+                    GeometrySpecification.Building,
+                    new ExtendedWkbGeometry(extendedWkb)));
+            ((ISetProvenance)addressWasPositioned).SetProvenance(fixture.Create<Provenance>());
+
+            await Assert(
+                Given(addressWasPositioned)
+                    .Expect(new HouseNumberLabelComparer(), _ => ctx.AddressDetail, new AddressDetailItem
+                    {
+                        AddressId = houseNumber1.AddressId,
+                        StreetNameId = houseNumber1.StreetNameId,
+                        HouseNumber = houseNumber1.HouseNumber,
+                        Complete = true,
+                        Removed = false,
+                        HouseNumberLabel = "1",
+                        HouseNumberLabelLength = 1,
+                        Position = new Point(111, 111),
+                    },new AddressDetailItem
+                    {
+                        AddressId = houseNumber6A.AddressId,
+                        StreetNameId = houseNumber6A.StreetNameId,
+                        HouseNumber = houseNumber6A.HouseNumber,
+                        Complete = true,
+                        Removed = false,
+                        HouseNumberLabel = "6A-6C",
+                        HouseNumberLabelLength = 5,
+                        Position = new Point(333, 333),
+                    }, new AddressDetailItem
+                    {
+                        AddressId = houseNumber6C.AddressId,
+                        StreetNameId = houseNumber6C.StreetNameId,
+                        HouseNumber = houseNumber6C.HouseNumber,
+                        Complete = true,
+                        Removed = false,
+                        HouseNumberLabel = "6A-6C",
+                        HouseNumberLabelLength = 5,
+                        Position = new Point(333, 333),
+                    }), ctx);
+        }
 
         protected override WmsContext CreateContext(DbContextOptions<WmsContext> options) => new(options);
         protected override AddressDetailProjections CreateProjection() => new(_wkbReader);
+    }
+
+    public class HouseNumberLabelComparer : IEntityComparer<AddressDetailItem>
+    {
+        public IEnumerable<EntityComparisonDifference<AddressDetailItem>> Compare(AddressDetailItem expected, AddressDetailItem actual)
+        {
+            if (expected.HouseNumberLabel != actual.HouseNumberLabel)
+            {
+                yield return new EntityComparisonDifference<AddressDetailItem>(expected, actual, $"Expected HouseNumberLabel to be {expected.HouseNumberLabel} but found {actual.HouseNumberLabel}");
+            }
+
+            if (expected.HouseNumberLabelLength != actual.HouseNumberLabelLength)
+            {
+                yield return new EntityComparisonDifference<AddressDetailItem>(expected, actual, $"Expected HouseNumberLabelLength to be {expected.HouseNumberLabelLength} but found {actual.HouseNumberLabelLength}");
+            }
+
+            if (expected.PositionX != actual.PositionX
+                || expected.PositionY != actual.PositionY)
+            {
+                yield return new EntityComparisonDifference<AddressDetailItem>(expected, actual, $"Expected position {expected.PositionX}-{expected.PositionY} but was {actual.PositionX}-{actual.PositionY}");
+            }
+
+            if (expected.Position.X != actual.Position.X
+                || expected.Position.Y != actual.Position.Y)
+            {
+                yield return new EntityComparisonDifference<AddressDetailItem>(expected, actual, $"Expected position {expected.Position.X}-{expected.Position.Y} but was {actual.Position.X}-{actual.Position.Y}");
+            }
+        }
     }
 }

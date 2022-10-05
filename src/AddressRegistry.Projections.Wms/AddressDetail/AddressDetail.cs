@@ -19,15 +19,17 @@ namespace AddressRegistry.Projections.Wms.AddressDetail
         public Guid StreetNameId { get; set; }
         public string? PostalCode { get; set; }
         public string? HouseNumber { get; set; }
+        public string? HouseNumberLabel { get; set; }
+        public int? HouseNumberLabelLength { get; set; }
         public WmsAddressLabelType LabelType { get; set; }
 
         public string? BoxNumber { get; set; }
         public string? Status { get; set; }
         public bool? OfficiallyAssigned { get; set; }
         public Point? Position { get; set; }
+        public double? PositionX { get; set; }
+        public double? PositionY { get; set; }
 
-        [DatabaseGenerated(DatabaseGeneratedOption.Computed)]
-        public string? PositionAsText { get; }
         public string? PositionMethod { get; set; }
         public string? PositionSpecification { get; set; }
 
@@ -73,9 +75,6 @@ namespace AddressRegistry.Projections.Wms.AddressDetail
             b.Property(p => p.Position)
                 .HasColumnType("sys.geometry");
 
-            b.Property(p => p.PositionAsText)
-                .HasComputedColumnSql("[Position].STAsText()", stored: true);
-
             b.Property(p => p.PositionSpecification);
             b.Property(p => p.PositionMethod);
             b.Property(p => p.Complete);
@@ -86,7 +85,7 @@ namespace AddressRegistry.Projections.Wms.AddressDetail
             b.HasIndex(p => p.PersistentLocalId);
             b.HasIndex(p => p.Status);
             b.HasIndex(p => p.StreetNameId);
-            b.HasIndex(p => new  {p.Removed, p.Complete, p.Status} ).IncludeProperties(x => x.StreetNameId);
+            b.HasIndex(p => new  {p.PositionX, p.PositionY, p.Removed, p.Complete, p.Status} ).IncludeProperties(x => x.StreetNameId);
         }
     }
 }

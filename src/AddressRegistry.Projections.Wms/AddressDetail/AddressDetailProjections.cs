@@ -1,5 +1,6 @@
 namespace AddressRegistry.Projections.Wms.AddressDetail
 {
+    using System.Linq;
     using Address;
     using Address.Events;
     using Be.Vlaanderen.Basisregisters.GrAr.Legacy;
@@ -310,21 +311,29 @@ namespace AddressRegistry.Projections.Wms.AddressDetail
 
             When<Envelope<AddressWasPositioned>>(async (context, message, ct) =>
             {
+                var address = await context.FindAddressDetail(message.Message.AddressId, ct, allowRemovedAddress:true);
+
+                if (address.Position != null)
+                {
+                    var oldGroup = await context.FindSharedPositionAddresses(address.AddressId, address.Position, address.Status, ct);
+                    oldGroup.UpdateHouseLabel();
+                }
+
                 var newPosition = ParsePosition(message.Message.ExtendedWkbGeometry);
-                await context.FindAndUpdateAddressDetail(
-                    message.Message.AddressId,
-                    (address) =>
-                    {
-                        address.Position = newPosition;
-                        address.PositionMethod = ConvertGeometryMethodToString(message.Message.GeometryMethod)
-                            ?.ToString();
-                        address.PositionSpecification =
-                            MapGeometrySpecificationToPositieSpecificatie(message.Message.GeometrySpecification)
-                                ?.ToString();
-                        UpdateVersionTimestamp(address, message.Message.Provenance.Timestamp);
-                    },
-                    ct,
-                    allowUpdateRemovedAddress: true);
+                address.Position = newPosition;
+                address.PositionX = newPosition.X;
+                address.PositionY = newPosition.Y;
+                address.PositionMethod = ConvertGeometryMethodToString(message.Message.GeometryMethod)
+                    ?.ToString();
+                address.PositionSpecification =
+                    MapGeometrySpecificationToPositieSpecificatie(message.Message.GeometrySpecification)
+                        ?.ToString();
+                UpdateVersionTimestamp(address, message.Message.Provenance.Timestamp);
+
+                var newGroup = await context.FindSharedPositionAddresses(address.AddressId, newPosition, address.Status, ct);
+                newGroup.Add(address);
+                newGroup.UpdateHouseLabel();
+
             });
 
             When<Envelope<AddressHouseNumberWasChanged>>(async (context, message, ct) =>
@@ -359,6 +368,8 @@ namespace AddressRegistry.Projections.Wms.AddressDetail
                     (address) =>
                     {
                         address.Position = newPosition;
+                        address.PositionX = newPosition.X;
+                        address.PositionY = newPosition.Y;
                         address.PositionMethod = ConvertGeometryMethodToString(message.Message.GeometryMethod)
                             ?.ToString();
                         address.PositionSpecification =
@@ -376,6 +387,8 @@ namespace AddressRegistry.Projections.Wms.AddressDetail
                     (address) =>
                     {
                         address.Position = null;
+                        address.PositionX = null;
+                        address.PositionY = null;
                         address.PositionMethod = null;
                         address.PositionSpecification = null;
                         UpdateVersionTimestamp(address, message.Message.Provenance.Timestamp);

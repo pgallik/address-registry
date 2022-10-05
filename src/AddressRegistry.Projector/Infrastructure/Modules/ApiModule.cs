@@ -78,7 +78,7 @@ namespace AddressRegistry.Projector.Infrastructure.Modules
             builder.RegisterEventstreamModule(_configuration);
             builder.RegisterModule(new ProjectorModule(_configuration));
 
-            RegisterLastChangedProjections(builder);
+            //RegisterLastChangedProjections(builder);
 
             if (_useProjectionsV2)
             {
@@ -91,9 +91,9 @@ namespace AddressRegistry.Projector.Infrastructure.Modules
             }
             else
             {
-                RegisterExtractProjections(builder);
-                RegisterLegacyProjections(builder);
-                RegisterWfsProjections(builder);
+                //RegisterExtractProjections(builder);
+                //RegisterLegacyProjections(builder);
+                //RegisterWfsProjections(builder);
                 RegisterWmsProjections(builder);
             }
         }

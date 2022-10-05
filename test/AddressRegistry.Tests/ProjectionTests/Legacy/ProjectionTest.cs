@@ -25,6 +25,11 @@ namespace AddressRegistry.Tests.ProjectionTests.Legacy
             await specification.Assert(CreateContext, _logger);
         }
 
+        protected async Task Assert(ConnectedProjectionTestSpecification<TContext> specification, TContext context)
+        {
+            await specification.Assert(() => context, _logger);
+        }
+
         protected ConnectedProjectionScenario<TContext> Given(params object[] messages)
         {
             var projection = CreateProjection();
